@@ -12,226 +12,311 @@
         how relevant code is retrieved, and how answers are generated.
       </p>
 
-      <div class="file-options">
-        <div class="sample-section">
-          <h3>Use a sample</h3>
-          <p>Choose an example Python file to get started.</p>
-
-          <select v-model="selectedSample" @change="handleSampleChange">
-            <option value="">Select a sample</option>
-
-            <option
-              v-for="fileName in sampleFiles"
-              :key="fileName"
-              :value="fileName"
-            >
-              {{ fileName }}
-            </option>
-          </select>
+      <div class="file-panel">
+        <div class="panel-header">
+          <h3>Choose a source file</h3>
+          <p>Select a sample or upload your own.</p>
         </div>
 
-        <div class="upload-section">
-          <h3>Upload your own</h3>
-          <p>Select a Python file from your computer.</p>
+        <div class="file-options">
+          <div class="sample-section">
+            <label for="sample-file">Sample file</label>
 
-          <FileUploader @file-selected="handleFileSelected" />
+            <div
+              class="sample-input"
+              :class="{ selected: selectedSample && selectedFile }"
+            >
+              <select
+                id="sample-file"
+                v-model="selectedSample"
+                @change="handleSampleChange"
+              >
+                <option value="">Select a sample...</option>
+
+                <option
+                  v-for="fileName in sampleFiles"
+                  :key="fileName"
+                  :value="fileName"
+                >
+                  {{ fileName }}
+                </option>
+              </select>
+            </div>
+
+            <p
+              v-if="selectedSample && selectedFile"
+              class="sample-status"
+            >
+              ✓ Sample selected
+            </p>
+          </div>
+
+          <div class="separator">or</div>
+
+          <div class="upload-section">
+            <label>Upload file</label>
+
+            <FileUploader
+              :selected-file="selectedSample ? null : selectedFile"
+              @file-selected="handleFileSelected"
+            />
+          </div>
+        </div>
+
+        <p v-if="errorMessage" class="error-message">
+          {{ errorMessage }}
+        </p>
+
+        <div class="panel-footer">
+          <span class="file-status">
+            <span v-if="selectedFile" class="status-ready">
+              ✓ Ready to configure
+            </span>
+            <span v-else>
+              No file selected
+            </span>
+          </span>
+
+          <button
+            class="start-button"
+            :disabled="!selectedFile"
+            @click="startExploring"
+          >
+            Continue →
+          </button>
         </div>
       </div>
-
-      <p v-if="selectedFile" class="selected-file">
-        Selected file: {{ selectedFile.name }}
-      </p>
-
-      <p v-if="errorMessage" class="error-message">
-        {{ errorMessage }}
-      </p>
-
-      <button
-        class="start-button"
-        :disabled="!selectedFile"
-        @click="startExploring"
-      >
-        Continue
-      </button>
     </section>
-
-    <footer class="footer">
-      RAGLens
-    </footer>
   </main>
 </template>
 
 <script setup lang="ts">
-    import { ref } from 'vue'
-    import FileUploader from '../components/FileUploader.vue'
-    import sampleFiles from 'virtual:sample-files'
+import { ref } from 'vue'
+import FileUploader from '../components/FileUploader.vue'
+import sampleFiles from 'virtual:sample-files'
 
-    const selectedFile = ref<File | null>(null)
-    const selectedSample = ref('')
-    const errorMessage = ref('')
+const selectedFile = ref<File | null>(null)
+const selectedSample = ref('')
+const errorMessage = ref('')
 
-    async function handleSampleChange() {
-    errorMessage.value = ''
-    selectedFile.value = null
+let selectionVersion = 0
 
-    if (!selectedSample.value) return
+async function handleSampleChange() {
+  const version = ++selectionVersion
 
-    try {
-        const response = await fetch(
-        `/samples/${selectedSample.value}`
-        )
+  errorMessage.value = ''
+  selectedFile.value = null
 
-        if (!response.ok) {
-        throw new Error('Could not load the selected sample.')
-        }
+  if (!selectedSample.value) return
 
-        const content = await response.text()
+  const fileName = selectedSample.value
 
-        selectedFile.value = new File(
-        [content],
-        selectedSample.value,
-        { type: 'text/x-python' }
-        )
-    } catch {
-        errorMessage.value = 'Unable to load this sample. Please try again.'
-        selectedSample.value = ''
-    }
+  try {
+    const response = await fetch(
+      `${import.meta.env.BASE_URL}samples/${encodeURIComponent(fileName)}`
+    )
+
+    if (!response.ok) {
+      throw new Error('Could not load the selected sample.')
     }
 
-    function handleFileSelected(file: File) {
-    selectedFile.value = file
+    const content = await response.text()
+
+    if (version !== selectionVersion) return
+
+    selectedFile.value = new File(
+      [content],
+      fileName,
+      { type: 'text/x-python' }
+    )
+  } catch {
+    if (version !== selectionVersion) return
+
+    errorMessage.value = 'Unable to load this sample. Please try again.'
     selectedSample.value = ''
-    errorMessage.value = ''
-    }
+  }
+}
 
-    function startExploring() {
-    if (!selectedFile.value) return
+function handleFileSelected(file: File) {
+  selectionVersion++
 
-    console.log('Selected file:', selectedFile.value.name)
+  selectedFile.value = file
+  selectedSample.value = ''
+  errorMessage.value = ''
+}
 
-    // File processing and navigation will be added later.
-    }
+function startExploring() {
+  if (!selectedFile.value) return
+
+  console.log('Selected file:', selectedFile.value.name)
+
+  // Navigation to the ingestion screen will be added later.
+}
 </script>
 
-
 <style scoped>
-    .landing-page {
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    }
+.landing-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
 
-    .header {
-    padding: 20px 40px;
-    border-bottom: 1px solid #e5e7eb;
-    }
+.header {
+  padding: 20px 40px;
+  border-bottom: 1px solid #e5e7eb;
+}
 
-    .header h2 {
-    font-size: 20px;
-    font-weight: 600;
-    }
+.header h2 {
+  font-size: 20px;
+  font-weight: 600;
+}
 
-    .main-content {
-    width: 90%;
-    max-width: 850px;
-    margin: 100px auto;
-    }
+.main-content {
+  width: 90%;
+  max-width: 750px;
+  margin: 90px auto;
+}
 
-    h1 {
-    font-size: 30px;
-    font-weight: 600;
-    margin-bottom: 16px;
-    }
+h1 {
+  font-size: 30px;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
 
-    .description {
-    color: #555;
-    line-height: 1.6;
-    margin-bottom: 40px;
-    }
+.description {
+  color: #555;
+  line-height: 1.6;
+  margin-bottom: 36px;
+}
 
-    .file-options {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 24px;
-    }
+.file-panel {
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: white;
+  overflow: hidden;
+}
 
-    .sample-section,
-    .upload-section {
-    padding: 20px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    background: white;
-    }
+.panel-header {
+  padding: 22px 24px;
+  border-bottom: 1px solid #e5e7eb;
+}
 
-    .sample-section h3,
-    .upload-section h3 {
-    font-size: 16px;
-    font-weight: 500;
-    margin-bottom: 10px;
-    }
+.panel-header h3 {
+  font-size: 17px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
 
-    .sample-section p,
-    .upload-section p {
-    font-size: 14px;
-    color: #777;
-    line-height: 1.5;
-    margin-bottom: 20px;
-    }
+.panel-header p {
+  font-size: 14px;
+  color: #777;
+}
 
-    .sample-section select {
-    width: 100%;
-    padding: 10px;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    background: white;
-    font: inherit;
-    }
+.file-options {
+  display: grid;
+  grid-template-columns: 1fr 40px 1fr;
+  align-items: center;
+  gap: 16px;
+  padding: 28px 24px;
+}
 
-    .selected-file {
-    margin-top: 20px;
-    font-size: 14px;
-    color: #333;
-    }
+.sample-section,
+.upload-section {
+  min-width: 0;
+}
 
-    .error-message {
-    margin-top: 12px;
-    color: #b42318;
-    font-size: 14px;
-    }
+.sample-section label,
+.upload-section > label {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #555;
+}
 
-    .start-button {
-    margin-top: 24px;
-    padding: 10px 20px;
-    border: 1px solid #333;
-    border-radius: 4px;
-    background: #333;
-    color: white;
-    }
+.sample-input select {
+  width: 100%;
+  min-height: 76px;
+  padding: 14px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: white;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
 
-    .start-button:hover:not(:disabled) {
-    background: #555;
-    }
+.sample-input.selected select {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
 
-    .start-button:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-    }
+.sample-status {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #2563eb;
+}
 
-    .footer {
-    margin-top: auto;
-    padding: 20px 40px;
-    border-top: 1px solid #e5e7eb;
-    color: #777;
-    font-size: 13px;
-    }
+.separator {
+  text-align: center;
+  font-size: 12px;
+  color: #999;
+}
 
-    @media (max-width: 650px) {
-    .file-options {
-        grid-template-columns: 1fr;
-    }
+.error-message {
+  padding: 0 24px 18px;
+  color: #b42318;
+  font-size: 14px;
+}
 
-    .main-content {
-        margin: 50px auto;
-    }
-    }
+.panel-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 24px;
+  border-top: 1px solid #e5e7eb;
+  background: #fafafa;
+}
+
+.file-status {
+  font-size: 13px;
+  color: #777;
+}
+
+.status-ready {
+  color: #2563eb;
+}
+
+.start-button {
+  padding: 11px 20px;
+  border: 1px solid #333;
+  border-radius: 5px;
+  background: #333;
+  color: white;
+}
+
+.start-button:hover:not(:disabled) {
+  background: #555;
+}
+
+.start-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+@media (max-width: 650px) {
+  .main-content {
+    margin: 50px auto;
+  }
+
+  .file-options {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+
+  .separator {
+    text-align: center;
+  }
+}
 </style>

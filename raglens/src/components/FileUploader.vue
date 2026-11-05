@@ -1,75 +1,120 @@
 <template>
-  <div class="file-upload">
-    <label for="python-file" class="upload-area">
-      <span class="upload-icon">↑</span>
-      <strong>Select a Python file</strong>
+  <label
+    for="python-file"
+    class="upload-area"
+    :class="{ selected: selectedFile }"
+  >
+    <span class="upload-icon">
+      {{ selectedFile ? '✓' : '↑' }}
+    </span>
+
+    <span class="upload-text">
+      <strong>
+        {{ selectedFile ? selectedFile.name : 'Upload a Python file' }}
+      </strong>
+
       <span class="upload-description">
-        Choose a .py file from your computer
+        {{ selectedFile ? 'File selected' : 'Click to choose a .py file' }}
       </span>
-      <input
-        id="python-file"
-        type="file"
-        accept=".py"
-        @change="handleFileChange"
-      />
-    </label>
-  </div>
+    </span>
+
+    <input
+      id="python-file"
+      type="file"
+      accept=".py"
+      @change="handleFileChange"
+    />
+  </label>
 </template>
 
 <script setup lang="ts">
-    const emit = defineEmits<{
-    fileSelected: [file: File]
-    }>()
+defineProps<{
+  selectedFile: File | null
+}>()
 
-    function handleFileChange(event: Event) {
-    const input = event.target as HTMLInputElement
-    const file = input.files?.[0]
+const emit = defineEmits<{
+  fileSelected: [file: File]
+}>()
 
-    if (!file) return
+function handleFileChange(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
 
-    if (!file.name.toLowerCase().endsWith('.py')) {
-        alert('Please select a Python (.py) file.')
-        input.value = ''
-        return
-    }
+  if (!file) return
 
-    emit('fileSelected', file)
-    }
+  if (!file.name.toLowerCase().endsWith('.py')) {
+    alert('Please select a Python (.py) file.')
+    input.value = ''
+    return
+  }
+
+  emit('fileSelected', file)
+
+  // Allows the same file to be selected again later.
+  input.value = ''
+}
 </script>
 
 <style scoped>
-    .file-upload {
-    width: 100%;
-    }
+.upload-area {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 76px;
+  padding: 14px;
+  border: 1px dashed #aaa;
+  border-radius: 6px;
+  background: white;
+  cursor: pointer;
+}
 
-    .upload-area {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 10px;
-    padding: 35px 20px;
-    border: 1px dashed #999;
-    border-radius: 4px;
-    background: white;
-    cursor: pointer;
-    }
+.upload-area:hover {
+  border-color: #555;
+  background: #fafafa;
+}
 
-    .upload-area:hover {
-    border-color: #333;
-    background: #fafafa;
-    }
+.upload-area.selected {
+  border: 1px dashed #2563eb;
+  background: #eff6ff;
+}
 
-    .upload-icon {
-    font-size: 28px;
-    color: #555;
-    }
+.upload-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: white;
+  color: #555;
+  font-size: 18px;
+}
 
-    .upload-description {
-    font-size: 14px;
-    color: #777;
-    }
+.selected .upload-icon {
+  color: #2563eb;
+}
 
-    input[type="file"] {
-    display: none;
-    }
+.upload-text {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.upload-text strong {
+  font-size: 13px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.upload-description {
+  font-size: 12px;
+  color: #777;
+}
+
+input[type="file"] {
+  display: none;
+}
 </style>
