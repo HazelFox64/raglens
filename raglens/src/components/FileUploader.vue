@@ -1,4 +1,3 @@
-
 <template>
   <div class="file-upload">
     <label for="python-file" class="upload-area">
@@ -18,59 +17,59 @@
 </template>
 
 <script setup lang="ts">
-const emit = defineEmits<{
-  fileSelected: [file: File]
-}>()
+    const emit = defineEmits<{
+    fileSelected: [file: File]
+    }>()
 
-function handleFileChange(event: Event) {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
+    function handleFileChange(event: Event) {
+    const input = event.target as HTMLInputElement
+    const file = input.files?.[0]
 
-  if (!file) return
+    if (!file) return
 
-  if (!file.name.toLowerCase().endsWith('.py')) {
-    alert('Please select a Python (.py) file.')
-    input.value = ''
-    return
-  }
+    if (!file.name.toLowerCase().endsWith('.py')) {
+        alert('Please select a Python (.py) file.')
+        input.value = ''
+        return
+    }
 
-  emit('fileSelected', file)
-}
+    emit('fileSelected', file)
+    }
 </script>
 
 <style scoped>
-.file-upload {
-  width: 100%;
-}
+    .file-upload {
+    width: 100%;
+    }
 
-.upload-area {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  padding: 35px 20px;
-  border: 1px dashed #999;
-  border-radius: 4px;
-  background: white;
-  cursor: pointer;
-}
+    .upload-area {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 35px 20px;
+    border: 1px dashed #999;
+    border-radius: 4px;
+    background: white;
+    cursor: pointer;
+    }
 
-.upload-area:hover {
-  border-color: #333;
-  background: #fafafa;
-}
+    .upload-area:hover {
+    border-color: #333;
+    background: #fafafa;
+    }
 
-.upload-icon {
-  font-size: 28px;
-  color: #555;
-}
+    .upload-icon {
+    font-size: 28px;
+    color: #555;
+    }
 
-.upload-description {
-  font-size: 14px;
-  color: #777;
-}
+    .upload-description {
+    font-size: 14px;
+    color: #777;
+    }
 
-input[type="file"] {
-  display: none;
-}
+    input[type="file"] {
+    display: none;
+    }
 </style>

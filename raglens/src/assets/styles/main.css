@@ -1,4 +1,3 @@
-/* reset */
 * {
   box-sizing: border-box;
   margin: 0;
@@ -11,7 +10,6 @@ body {
   color: #1e293b;
 }
 
-/* application */
 #app {
   min-height: 100vh;
 }
