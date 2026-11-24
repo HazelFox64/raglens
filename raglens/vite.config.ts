@@ -30,7 +30,7 @@ function sampleFilesPlugin(): Plugin {
     configureServer(server) {
       server.watcher.add(samplesDirectory)
 
-      server.watcher.on('all', (event, filePath) => {
+      server.watcher.on('all', (_event, filePath) => {
         if (
           filePath.startsWith(samplesDirectory) &&
           filePath.endsWith('.py')

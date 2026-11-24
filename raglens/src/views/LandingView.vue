@@ -2,14 +2,17 @@
   <main class="landing-page">
     <header class="header">
       <h2>RAGLens</h2>
+      <span>Start a run</span>
     </header>
 
     <section class="main-content">
-      <h1>Explore RAG with Python code</h1>
+      <h1>RAGLens</h1>
 
       <p class="description">
-        Upload a Python file to explore how it is split into chunks,
-        how relevant code is retrieved, and how answers are generated.
+        RAGLens is an interactive tool for exploring retrieval-augmented
+        generation with Python code. Choose a source file, configure how it is
+        chunked and embedded, then compare how retrieval settings influence
+        generated answers.
       </p>
 
       <div class="file-panel">
@@ -54,7 +57,7 @@
           <div class="separator">or</div>
 
           <div class="upload-section">
-            <label>Upload file</label>
+            <label for="python-file">Upload file</label>
 
             <FileUploader
               :selected-file="selectedSample ? null : selectedFile"
@@ -82,7 +85,7 @@
             :disabled="!selectedFile"
             @click="startExploring"
           >
-            Continue →
+            Continue
           </button>
         </div>
       </div>
@@ -94,6 +97,10 @@
 import { ref } from 'vue'
 import FileUploader from '../components/FileUploader.vue'
 import sampleFiles from 'virtual:sample-files'
+
+const emit = defineEmits<{
+  continue: [file: File]
+}>()
 
 const selectedFile = ref<File | null>(null)
 const selectedSample = ref('')
@@ -148,9 +155,7 @@ function handleFileSelected(file: File) {
 function startExploring() {
   if (!selectedFile.value) return
 
-  console.log('Selected file:', selectedFile.value.name)
-
-  // Navigation to the ingestion screen will be added later.
+  emit('continue', selectedFile.value)
 }
 </script>
 
@@ -159,65 +164,81 @@ function startExploring() {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  background: #f8fafc;
 }
 
 .header {
-  padding: 20px 40px;
+  display: flex;
+  height: 64px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 32px;
   border-bottom: 1px solid #e5e7eb;
+  background: white;
 }
 
 .header h2 {
+  margin: 0;
+  color: #1e293b;
   font-size: 20px;
   font-weight: 600;
 }
 
+.header span {
+  color: #64748b;
+  font-size: 13px;
+}
+
 .main-content {
-  width: 90%;
-  max-width: 750px;
-  margin: 90px auto;
+  width: min(100% - 36px, 820px);
+  margin: 76px auto;
 }
 
 h1 {
+  color: #1e293b;
   font-size: 30px;
   font-weight: 600;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 
 .description {
-  color: #555;
+  max-width: 690px;
+  margin-bottom: 32px;
+  color: #475569;
+  font-size: 15px;
   line-height: 1.6;
-  margin-bottom: 36px;
 }
 
 .file-panel {
-  border: 1px solid #ddd;
-  border-radius: 8px;
+  border: 1px solid #d7dee6;
+  border-radius: 10px;
   background: white;
   overflow: hidden;
 }
 
 .panel-header {
-  padding: 22px 24px;
+  padding: 20px 24px;
   border-bottom: 1px solid #e5e7eb;
 }
 
 .panel-header h3 {
-  font-size: 17px;
+  color: #1e293b;
+  font-size: 16px;
   font-weight: 600;
   margin-bottom: 8px;
 }
 
 .panel-header p {
-  font-size: 14px;
-  color: #777;
+  color: #64748b;
+  font-size: 13px;
 }
 
 .file-options {
   display: grid;
-  grid-template-columns: 1fr 40px 1fr;
-  align-items: center;
+  grid-template-columns: 1fr 32px 1fr;
+  align-items: start;
   gap: 16px;
-  padding: 28px 24px;
+  padding: 24px;
 }
 
 .sample-section,
@@ -229,18 +250,19 @@ h1 {
 .upload-section > label {
   display: block;
   margin-bottom: 10px;
-  font-size: 12px;
+  color: #334155;
+  font-size: 13px;
   font-weight: 600;
-  color: #555;
 }
 
 .sample-input select {
   width: 100%;
-  min-height: 76px;
-  padding: 14px;
-  border: 1px solid #ddd;
-  border-radius: 6px;
+  height: 42px;
+  padding: 0 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
   background: white;
+  color: #1e293b;
   font: inherit;
   font-size: 13px;
   cursor: pointer;
@@ -254,13 +276,14 @@ h1 {
 .sample-status {
   margin-top: 8px;
   font-size: 12px;
-  color: #2563eb;
+  color: #047857;
 }
 
 .separator {
+  margin-top: 40px;
   text-align: center;
   font-size: 12px;
-  color: #999;
+  color: #64748b;
 }
 
 .error-message {
@@ -274,40 +297,41 @@ h1 {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 18px 24px;
+  padding: 16px 24px;
   border-top: 1px solid #e5e7eb;
   background: #fafafa;
 }
 
 .file-status {
+  color: #64748b;
   font-size: 13px;
-  color: #777;
 }
 
 .status-ready {
-  color: #2563eb;
+  color: #047857;
 }
 
 .start-button {
-  padding: 11px 20px;
-  border: 1px solid #333;
-  border-radius: 5px;
-  background: #333;
+  padding: 10px 16px;
+  border: 1px solid #2563eb;
+  border-radius: 7px;
+  background: #2563eb;
   color: white;
 }
 
 .start-button:hover:not(:disabled) {
-  background: #555;
+  background: #1d4ed8;
 }
 
 .start-button:disabled {
-  opacity: 0.4;
+  border-color: #cbd5e1;
+  background: #cbd5e1;
   cursor: not-allowed;
 }
 
 @media (max-width: 650px) {
   .main-content {
-    margin: 50px auto;
+    margin: 52px auto;
   }
 
   .file-options {
@@ -316,7 +340,7 @@ h1 {
   }
 
   .separator {
-    text-align: center;
+    margin-top: 0;
   }
 }
 </style>

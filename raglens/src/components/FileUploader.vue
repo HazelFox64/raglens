@@ -62,20 +62,25 @@ function handleFileChange(event: Event) {
   gap: 12px;
   min-height: 76px;
   padding: 14px;
-  border: 1px dashed #aaa;
-  border-radius: 6px;
+  border: 1px dashed #94a3b8;
+  border-radius: 7px;
   background: white;
   cursor: pointer;
 }
 
 .upload-area:hover {
-  border-color: #555;
-  background: #fafafa;
+  border-color: #2563eb;
+  background: #f8fafc;
 }
 
 .upload-area.selected {
   border: 1px dashed #2563eb;
   background: #eff6ff;
+}
+
+.upload-area:focus-within {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
 }
 
 .upload-icon {
@@ -85,10 +90,10 @@ function handleFileChange(event: Event) {
   flex-shrink: 0;
   width: 32px;
   height: 32px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
   background: white;
-  color: #555;
+  color: #475569;
   font-size: 18px;
 }
 
@@ -104,6 +109,7 @@ function handleFileChange(event: Event) {
 }
 
 .upload-text strong {
+  color: #1e293b;
   font-size: 13px;
   font-weight: 500;
   overflow-wrap: anywhere;
@@ -111,10 +117,14 @@ function handleFileChange(event: Event) {
 
 .upload-description {
   font-size: 12px;
-  color: #777;
+  color: #64748b;
 }
 
 input[type="file"] {
-  display: none;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
 }
 </style>
