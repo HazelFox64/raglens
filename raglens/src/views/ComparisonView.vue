@@ -50,6 +50,12 @@
             <div>
               <h2>{{ snapshot.name }}</h2>
               <p>{{ snapshot.fileName }}</p>
+              <details v-if="snapshot.sourcePaths" class="snapshot-files">
+                <summary>{{ snapshot.sourcePaths.length }} Python {{ snapshot.sourcePaths.length === 1 ? 'file' : 'files' }}</summary>
+                <ul>
+                  <li v-for="path in snapshot.sourcePaths" :key="path">{{ path }}</li>
+                </ul>
+              </details>
             </div>
             <button type="button" :aria-label="`Close ${snapshot.name}`" @click="closeSnapshot(snapshot.id)">×</button>
           </header>
@@ -63,8 +69,10 @@
                 <dl>
                   <dt>Chunks</dt>
                   <dd>{{ snapshot.ingestionSettings.chunks.length }}</dd>
-                  <dt>Minimum size</dt>
-                  <dd>{{ snapshot.ingestionSettings.minimumSize }} lines</dd>
+                  <template v-if="!snapshot.ingestionSettings.astTargetSize">
+                    <dt>Minimum size</dt>
+                    <dd>{{ snapshot.ingestionSettings.minimumSize }} lines</dd>
+                  </template>
                   <dt>Parent context</dt>
                   <dd>{{ snapshot.ingestionSettings.parentContext }}</dd>
                   <dt>Metadata</dt>
@@ -141,7 +149,7 @@ function closeSnapshot(snapshotId: number) {
 }
 
 function ingestionSummary(snapshot: RunSnapshot) {
-  const { method, chunkSize, overlap } = snapshot.ingestionSettings
+  const { method, chunkSize, astTargetSize, overlap } = snapshot.ingestionSettings
 
   const labels = {
     'parent-child': 'Parent/Child',
@@ -150,7 +158,11 @@ function ingestionSummary(snapshot: RunSnapshot) {
   }
   const parts = [labels[method]]
   if (chunkSize !== null) parts.push(`${chunkSize} lines`)
-  parts.push(`${overlap} line overlap`)
+  if (astTargetSize !== undefined) {
+    parts.push(`${astTargetSize}-line target`)
+  } else {
+    parts.push(`${overlap} line overlap`)
+  }
   return parts.join(' · ')
 }
 </script>
@@ -329,6 +341,21 @@ h1 {
   color: #64748b;
   font-size: 12px;
   overflow-wrap: anywhere;
+}
+
+.snapshot-files {
+  margin-top: 6px;
+  color: #475569;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.snapshot-files summary {
+  cursor: pointer;
+}
+
+.snapshot-files ul {
+  margin: 4px 0 0 16px;
 }
 
 .snapshot-header button {

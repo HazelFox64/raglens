@@ -1,14 +1,26 @@
 <template>
   <section class="code-viewer" aria-label="Source code preview">
     <header class="code-header">
-      <span>{{ label || fileName }}</span>
+      <span>{{ label || activeFile?.path }}</span>
       <span>{{ lineCount }} lines</span>
     </header>
 
-    <div class="code-scroll" tabindex="0" role="region" :aria-label="label || 'Code lines'">
-      <template v-if="chunks.length">
+    <div v-if="showFileTabs || files.length > 1" class="file-tabs" role="group" aria-label="Source files">
+      <button
+        v-for="file in files"
+        :key="file.path"
+        type="button"
+        :aria-pressed="file.path === activeFile?.path"
+        @click="selectedPath = file.path"
+      >
+        {{ file.path }}
+      </button>
+    </div>
+
+    <div :key="activeFile?.path" class="code-scroll" tabindex="0" role="region" :aria-label="activeFile?.path || 'Code lines'">
+      <template v-if="visibleChunks.length">
         <article
-          v-for="chunk in chunks"
+          v-for="chunk in visibleChunks"
           :key="chunk.id"
           class="chunk-block"
           :class="chunkColour(chunk.id)"
@@ -16,6 +28,7 @@
           <p class="chunk-label">
             Chunk {{ chunk.id }}
             <span v-if="chunk.parentId">· Parent {{ chunk.parentId }}</span>
+            <span v-if="chunk.symbolName">· {{ chunk.symbolName }}</span>
           </p>
 
           <div
@@ -34,21 +47,24 @@
           <span class="line-number">{{ index + 1 }}</span>
           <span class="line-content" v-html="highlightLine(line)" />
         </div>
+        <p v-if="!lines.length" class="empty-queue">This file is empty.</p>
       </template>
 
-      <p v-else class="empty-queue">All chunks have been embedded.</p>
+      <p v-else class="empty-queue">
+        {{ chunks.length ? 'No chunks from this file remain in the queue.' : 'All chunks have been embedded.' }}
+      </p>
     </div>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-import type { CodeChunk } from '../types/rag'
+import { computed, ref } from 'vue'
+import type { CodeChunk, SourceFile } from '../types/rag'
 
 const props = withDefaults(defineProps<{
-  fileName: string
-  source: string
+  files: SourceFile[]
   chunks: CodeChunk[]
+  showFileTabs?: boolean
   label?: string
   showSourceWhenEmpty?: boolean
 }>(), {
@@ -56,12 +72,16 @@ const props = withDefaults(defineProps<{
   showSourceWhenEmpty: true
 })
 
-const lines = computed(() => {
-  if (!props.source) return []
-
-  return props.source.replace(/\r?\n$/, '').split(/\r?\n/)
+const selectedPath = ref('')
+const activeFile = computed(() => {
+  const path = selectedPath.value || props.chunks[0]?.sourcePath
+  return props.files.find(file => file.path === path) ?? props.files[0]
 })
+const lines = computed(() => activeFile.value?.lines ?? [])
 const lineCount = computed(() => lines.value.length)
+const visibleChunks = computed(() =>
+  props.chunks.filter(chunk => chunk.sourcePath === activeFile.value?.path)
+)
 
 function chunkLineNumbers(chunk: CodeChunk) {
   return Array.from(
@@ -119,6 +139,40 @@ function highlightLine(line: string | undefined) {
 .code-header span:last-child {
   color: #555;
   font-size: 12px;
+  flex-shrink: 0;
+}
+
+.code-header span:first-child {
+  overflow-wrap: anywhere;
+}
+
+.file-tabs {
+  display: flex;
+  gap: 4px;
+  flex: 0 0 auto;
+  overflow-x: auto;
+  padding: 5px 8px;
+  border-bottom: 1px solid #e5e7eb;
+  background: #fafafa;
+}
+
+.file-tabs button {
+  flex-shrink: 0;
+  max-width: min(100%, 18rem);
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: #334155;
+  font-size: 13px;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.file-tabs button[aria-pressed='true'] {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
 }
 
 .code-scroll {

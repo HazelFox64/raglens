@@ -3,18 +3,40 @@ export type ChunkingStrategy =
   | 'function-aware'
   | 'ast-based'
 
-export interface CodeChunk {
-  id: string
-  parentId?: string
+export interface SourceFile {
+  path: string
+  lines: string[]
+}
+
+export interface SourceSelection {
+  name: string
+  isFolder: boolean
+  files: SourceFile[]
+}
+
+export interface SourceSpan {
+  sourcePath: string
   content: string
   startLine: number
   endLine: number
 }
 
+export interface CodeChunk extends SourceSpan {
+  id: string
+  parentId?: string
+  symbolName?: string
+}
+
+export interface ParentChunk extends SourceSpan {
+  id: string
+}
+
 export interface IngestionSettings {
   method: ChunkingStrategy
   chunkSize: number | null
+  astTargetSize?: number
   chunks: CodeChunk[]
+  parents?: ParentChunk[]
   overlap: number
   minimumSize: number
   parentContext: string
@@ -39,6 +61,7 @@ export interface RunSnapshot {
   id: number
   name: string
   fileName: string
+  sourcePaths?: string[]
   ingestionSettings: IngestionSettings
   retrievalSettings: RetrievalSettings
   messages: ChatMessage[]

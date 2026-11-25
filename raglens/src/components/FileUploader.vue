@@ -1,57 +1,62 @@
 <template>
   <label
-    for="python-file"
+    :for="inputId"
     class="upload-area"
-    :class="{ selected: selectedFile }"
+    :class="{ selected: selectedName }"
   >
     <span class="upload-icon">
-      {{ selectedFile ? '✓' : '↑' }}
+      {{ selectedName ? '✓' : '↑' }}
     </span>
 
     <span class="upload-text">
       <strong>
-        {{ selectedFile ? selectedFile.name : 'Upload a Python file' }}
+        {{ selectedName || (folder ? 'Upload a folder' : 'Upload a Python file') }}
       </strong>
 
       <span class="upload-description">
-        {{ selectedFile ? 'File selected' : 'Click to choose a .py file' }}
+        {{ folder ? 'Includes Python files in subfolders' : 'Click to choose a .py file' }}
       </span>
     </span>
 
     <input
-      id="python-file"
+      :id="inputId"
       type="file"
-      accept=".py"
+      :accept="folder ? undefined : '.py'"
+      :webkitdirectory.attr="folder ? '' : undefined"
+      :multiple="folder"
       @change="handleFileChange"
     />
   </label>
 </template>
 
 <script setup lang="ts">
-defineProps<{
-  selectedFile: File | null
+const props = defineProps<{
+  inputId: string
+  selectedName?: string
+  folder?: boolean
 }>()
 
 const emit = defineEmits<{
-  fileSelected: [file: File]
+  filesSelected: [files: File[], isFolder: boolean]
+  invalidSelection: [message: string]
 }>()
 
 function handleFileChange(event: Event) {
   const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
+  // Allows the same file to be selected again later.
+  const files = Array.from(input.files ?? [])
+  input.value = ''
+  if (!files.length) return
 
-  if (!file) return
-
-  if (!file.name.toLowerCase().endsWith('.py')) {
-    alert('Please select a Python (.py) file.')
-    input.value = ''
+  const pythonFiles = files.filter(file => file.name.toLowerCase().endsWith('.py'))
+  if (!pythonFiles.length) {
+    emit('invalidSelection', props.folder
+      ? 'This folder contains no Python (.py) files.'
+      : 'Please select a Python (.py) file.')
     return
   }
 
-  emit('fileSelected', file)
-
-  // Allows the same file to be selected again later.
-  input.value = ''
+  emit('filesSelected', pythonFiles, Boolean(props.folder))
 }
 </script>
 

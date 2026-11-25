@@ -7,9 +7,11 @@
 
     <div class="visualisation-layout">
       <SettingsBar
-        :file-name="file.name"
+        :file-name="source.name"
+        :is-folder="source.isFolder"
         :method-label="methodLabel"
         :chunk-size="settings.chunkSize"
+        :ast-target-size="settings.astTargetSize"
         :chunk-count="settings.chunks.length"
         :overlap="settings.overlap"
         :minimum-size="settings.minimumSize"
@@ -42,10 +44,15 @@
 
           <article class="code-card" :class="currentChunkColour">
             <header>
-              <span>Chunk {{ currentChunk?.id ?? '—' }}</span>
+              <span>
+                Chunk {{ currentChunk?.id ?? '—' }}
+                <template v-if="currentChunk?.parentId">· Parent {{ currentChunk.parentId }}</template>
+                <template v-if="currentChunk?.symbolName">· {{ currentChunk.symbolName }}</template>
+                <template v-if="source.isFolder && currentChunk">· {{ currentChunk.sourcePath }}</template>
+              </span>
               <span>{{ currentChunkLineCount }} lines</span>
             </header>
-            <pre>{{ currentChunk?.content || 'Preparing source…' }}</pre>
+            <pre>{{ currentChunk?.content ?? '' }}</pre>
           </article>
 
           <div class="conversion-arrow" aria-hidden="true">↓</div>
@@ -83,9 +90,9 @@
       <CodeViewer
         class="embedding-queue"
         label="Embedding queue"
-        :file-name="file.name"
-        :source="source"
+        :files="source.files"
         :chunks="queuedChunks"
+        :show-file-tabs="source.isFolder"
         :show-source-when-empty="false"
       />
     </div>
@@ -93,13 +100,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import CodeViewer from '../components/CodeViewer.vue'
 import SettingsBar from '../components/SettingsBar.vue'
-import type { IngestionSettings } from '../types/rag'
+import type { IngestionSettings, SourceSelection } from '../types/rag'
 
 const props = defineProps<{
-  file: File
+  source: SourceSelection
   settings: IngestionSettings
 }>()
 
@@ -108,7 +115,6 @@ const emit = defineEmits<{
   continue: []
 }>()
 
-const source = ref('')
 const activeChunkIndex = ref(0)
 const processedCount = computed(() =>
   Math.min(activeChunkIndex.value + 1, props.settings.chunks.length)
@@ -177,9 +183,6 @@ function nextChunk() {
   }
 }
 
-onMounted(async () => {
-  source.value = await props.file.text()
-})
 </script>
 
 <style scoped>
@@ -329,8 +332,13 @@ onMounted(async () => {
 
 .code-card header span:last-child,
 .vector-card header span:last-child {
+  flex-shrink: 0;
   color: #64748b;
   font-weight: 400;
+}
+
+.code-card header span:first-child {
+  overflow-wrap: anywhere;
 }
 
 .code-card pre {

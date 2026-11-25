@@ -7,9 +7,11 @@
 
     <div class="retrieval-layout">
       <SettingsBar
-        :file-name="file.name"
+        :file-name="source.name"
+        :is-folder="source.isFolder"
         :method-label="ingestionMethod"
         :chunk-size="ingestionSettings.chunkSize"
+        :ast-target-size="ingestionSettings.astTargetSize"
         :chunk-count="ingestionSettings.chunks.length"
         :overlap="ingestionSettings.overlap"
         :minimum-size="ingestionSettings.minimumSize"
@@ -102,7 +104,7 @@
         <header class="chat-header">
           <div>
             <h1>Generation</h1>
-            <p>Ask questions about your selected file.</p>
+            <p>Ask questions about your selected Python code.</p>
           </div>
           <button type="button" :disabled="!messages.length" @click="clearChat">Clear chat</button>
         </header>
@@ -128,12 +130,12 @@
         </div>
 
         <form class="chat-form" @submit.prevent="sendMessage">
-          <label class="sr-only" for="chat-message">Ask about your source file</label>
+          <label class="sr-only" for="chat-message">Ask about your source code</label>
           <textarea
             id="chat-message"
             v-model="draftMessage"
             rows="2"
-            placeholder="Ask about your source file…"
+            placeholder="Ask about your source code…"
             @keydown.enter.exact.prevent="sendMessage"
           />
           <button type="submit" :disabled="!draftMessage.trim()">Send</button>
@@ -148,10 +150,10 @@ import { computed, ref, watch } from 'vue'
 import SettingsBar from '../components/SettingsBar.vue'
 import ParameterLabel from '../components/ParameterLabel.vue'
 import { describeRetrieval } from '../types/rag'
-import type { ChatMessage, IngestionSettings, RetrievalSettings, RunSnapshot } from '../types/rag'
+import type { ChatMessage, IngestionSettings, RetrievalSettings, RunSnapshot, SourceSelection } from '../types/rag'
 
 const props = defineProps<{
-  file: File
+  source: SourceSelection
   ingestionSettings: IngestionSettings
   snapshotCount: number
 }>()
@@ -205,7 +207,7 @@ function sendMessage() {
   messages.value.push({
     id: nextMessageId++,
     role: 'assistant',
-    text: `This sample response uses a simulated retrieval of ${topK.value} chunks from ${props.file.name}.`,
+    text: `This sample response uses a simulated retrieval of ${topK.value} chunks from ${props.source.name}.`,
     retrievalSettings: { ...currentSettings.value }
   })
   draftMessage.value = ''
@@ -230,10 +232,12 @@ function saveSnapshot() {
   emit('save-snapshot', {
     id: Date.now(),
     name,
-    fileName: props.file.name,
+    fileName: props.source.name,
+    sourcePaths: props.source.isFolder ? props.source.files.map(file => file.path) : undefined,
     ingestionSettings: {
       ...props.ingestionSettings,
-      chunks: [...props.ingestionSettings.chunks]
+      chunks: [...props.ingestionSettings.chunks],
+      parents: props.ingestionSettings.parents?.map(parent => ({ ...parent }))
     },
     retrievalSettings: { ...currentSettings.value },
     messages: messages.value.map(message => ({

@@ -52,5 +52,6 @@ function sampleFilesPlugin(): Plugin {
 
 export default defineConfig({
   base: '/raglens/',
+  worker: { format: 'es' },
   plugins: [vue(), sampleFilesPlugin()]
 })

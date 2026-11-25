@@ -10,15 +10,15 @@
 
       <p class="description">
         RAGLens is an interactive tool for exploring retrieval-augmented
-        generation with Python code. Choose a source file, configure how it is
-        chunked and embedded, then compare how retrieval settings influence
+        generation with Python code. Choose a file or folder, configure how its
+        code is chunked and embedded, then compare how retrieval settings influence
         generated answers.
       </p>
 
       <div class="file-panel">
         <div class="panel-header">
-          <h3>Choose a source file</h3>
-          <p>Select a sample or upload your own.</p>
+          <h3>Choose your source</h3>
+          <p>Select a sample or upload a Python file or folder.</p>
         </div>
 
         <div class="file-options">
@@ -27,7 +27,7 @@
 
             <div
               class="sample-input"
-              :class="{ selected: selectedSample && selectedFile }"
+              :class="{ selected: selectedSample && selectedSource }"
             >
               <select
                 id="sample-file"
@@ -47,7 +47,7 @@
             </div>
 
             <p
-              v-if="selectedSample && selectedFile"
+              v-if="selectedSample && selectedSource"
               class="sample-status"
             >
               ✓ Sample selected
@@ -57,23 +57,33 @@
           <div class="separator">or</div>
 
           <div class="upload-section">
-            <label for="python-file">Upload file</label>
+            <p class="upload-label">Upload source</p>
 
             <FileUploader
-              :selected-file="selectedSample ? null : selectedFile"
-              @file-selected="handleFileSelected"
+              input-id="python-file"
+              :selected-name="!selectedSample && !selectedSource?.isFolder ? selectedSource?.name : undefined"
+              @files-selected="handleFilesSelected"
+              @invalid-selection="errorMessage = $event"
+            />
+            <FileUploader
+              input-id="python-folder"
+              folder
+              :selected-name="selectedSource?.isFolder ? selectedSource.name : undefined"
+              @files-selected="handleFilesSelected"
+              @invalid-selection="errorMessage = $event"
             />
           </div>
         </div>
 
-        <p v-if="errorMessage" class="error-message">
+        <p v-if="errorMessage" class="error-message" role="alert">
           {{ errorMessage }}
         </p>
 
         <div class="panel-footer">
-          <span class="file-status">
-            <span v-if="selectedFile" class="status-ready">
-              ✓ Ready to configure
+          <span class="file-status" role="status">
+            <span v-if="loading">Reading Python files…</span>
+            <span v-else-if="selectedSource" class="status-ready">
+              {{ selectedSource.files.length }} Python {{ selectedSource.files.length === 1 ? 'file' : 'files' }} selected
             </span>
             <span v-else>
               No file selected
@@ -82,7 +92,7 @@
 
           <button
             class="start-button"
-            :disabled="!selectedFile"
+            :disabled="!selectedSource || loading"
             @click="startExploring"
           >
             Continue
@@ -97,22 +107,29 @@
 import { ref } from 'vue'
 import FileUploader from '../components/FileUploader.vue'
 import sampleFiles from 'virtual:sample-files'
+import type { SourceFile, SourceSelection } from '../types/rag'
 
 const emit = defineEmits<{
-  continue: [file: File]
+  continue: [source: SourceSelection]
 }>()
 
-const selectedFile = ref<File | null>(null)
+const selectedSource = ref<SourceSelection | null>(null)
 const selectedSample = ref('')
 const errorMessage = ref('')
+const loading = ref(false)
 
 let selectionVersion = 0
+
+function readSourceLines(path: string, text: string): SourceFile {
+  return { path, lines: text ? text.replace(/\r?\n$/, '').split(/\r?\n/) : [] }
+}
 
 async function handleSampleChange() {
   const version = ++selectionVersion
 
   errorMessage.value = ''
-  selectedFile.value = null
+  selectedSource.value = null
+  loading.value = Boolean(selectedSample.value)
 
   if (!selectedSample.value) return
 
@@ -131,31 +148,52 @@ async function handleSampleChange() {
 
     if (version !== selectionVersion) return
 
-    selectedFile.value = new File(
-      [content],
-      fileName,
-      { type: 'text/x-python' }
-    )
+    selectedSource.value = {
+      name: fileName,
+      isFolder: false,
+      files: [readSourceLines(fileName, content)]
+    }
   } catch {
     if (version !== selectionVersion) return
 
     errorMessage.value = 'Unable to load this sample. Please try again.'
     selectedSample.value = ''
+  } finally {
+    if (version === selectionVersion) loading.value = false
   }
 }
 
-function handleFileSelected(file: File) {
-  selectionVersion++
-
-  selectedFile.value = file
+async function handleFilesSelected(files: File[], isFolder: boolean) {
+  const version = ++selectionVersion
+  selectedSource.value = null
   selectedSample.value = ''
   errorMessage.value = ''
+  loading.value = true
+
+  const firstPath = files[0]?.webkitRelativePath
+  const name = isFolder ? firstPath?.split('/')[0] || 'Python folder' : files[0]?.name || 'Python file'
+
+  try {
+    const sources = await Promise.all(files.map(async file => {
+      const relativePath = file.webkitRelativePath
+      const path = relativePath ? relativePath.slice(relativePath.indexOf('/') + 1) : file.name
+      return readSourceLines(path, await file.text())
+    }))
+    if (version !== selectionVersion) return
+
+    sources.sort((a, b) => a.path.localeCompare(b.path, 'en'))
+    selectedSource.value = { name, isFolder, files: sources }
+  } catch {
+    if (version === selectionVersion) errorMessage.value = 'Unable to read the selected Python files.'
+  } finally {
+    if (version === selectionVersion) loading.value = false
+  }
 }
 
 function startExploring() {
-  if (!selectedFile.value) return
+  if (!selectedSource.value || loading.value) return
 
-  emit('continue', selectedFile.value)
+  emit('continue', selectedSource.value)
 }
 </script>
 
@@ -247,12 +285,16 @@ h1 {
 }
 
 .sample-section label,
-.upload-section > label {
+.upload-label {
   display: block;
   margin-bottom: 10px;
   color: #334155;
   font-size: 13px;
   font-weight: 600;
+}
+
+.upload-section :deep(.upload-area + .upload-area) {
+  margin-top: 8px;
 }
 
 .sample-input select {

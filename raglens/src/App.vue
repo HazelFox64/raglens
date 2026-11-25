@@ -5,15 +5,15 @@ import IngestionView from './views/IngestionView.vue'
 import IngestionVisualisationView from './views/IngestionVisualisationView.vue'
 import RetrievalView from './views/RetrievalView.vue'
 import ComparisonView from './views/ComparisonView.vue'
-import type { IngestionSettings, RunSnapshot } from './types/rag'
+import type { IngestionSettings, RunSnapshot, SourceSelection } from './types/rag'
 
 const currentView = ref<'landing' | 'ingestion' | 'ingestion-visualisation' | 'retrieval' | 'comparison'>('landing')
-const selectedFile = ref<File | null>(null)
+const selectedSource = ref<SourceSelection | null>(null)
 const ingestionSettings = ref<IngestionSettings | null>(null)
 const snapshots = ref<RunSnapshot[]>([])
 
-function openIngestion(file: File) {
-  selectedFile.value = file
+function openIngestion(source: SourceSelection) {
+  selectedSource.value = source
   ingestionSettings.value = null
   currentView.value = 'ingestion'
 }
@@ -38,7 +38,7 @@ function openComparison() {
 }
 
 function startNewRun() {
-  selectedFile.value = null
+  selectedSource.value = null
   ingestionSettings.value = null
   currentView.value = 'landing'
 }
@@ -51,24 +51,24 @@ function startNewRun() {
   />
 
   <IngestionView
-    v-else-if="currentView === 'ingestion' && selectedFile"
-    :file="selectedFile"
+    v-else-if="currentView === 'ingestion' && selectedSource"
+    :source="selectedSource"
     @back="currentView = 'landing'"
     @ingest="openIngestionVisualisation"
   />
 
   <IngestionVisualisationView
-    v-else-if="currentView === 'ingestion-visualisation' && selectedFile && ingestionSettings"
-    :file="selectedFile"
+    v-else-if="currentView === 'ingestion-visualisation' && selectedSource && ingestionSettings"
+    :source="selectedSource"
     :settings="ingestionSettings"
     @back="currentView = 'ingestion'"
     @continue="openRetrieval"
   />
 
   <RetrievalView
-    v-if="(currentView === 'retrieval' || currentView === 'comparison') && selectedFile && ingestionSettings"
+    v-if="(currentView === 'retrieval' || currentView === 'comparison') && selectedSource && ingestionSettings"
     v-show="currentView === 'retrieval'"
-    :file="selectedFile"
+    :source="selectedSource"
     :ingestion-settings="ingestionSettings"
     :snapshot-count="snapshots.length"
     @back="currentView = 'ingestion-visualisation'"

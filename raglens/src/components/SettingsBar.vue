@@ -3,7 +3,7 @@
     <p class="settings-title">Settings</p>
 
     <div class="source-file">
-      <strong>Source File:</strong>
+      <strong>{{ isFolder ? 'Source Folder:' : 'Source File:' }}</strong>
       <span>{{ fileName }}</span>
     </div>
 
@@ -19,15 +19,15 @@
           </div>
         </div>
 
-        <div v-if="chunkSize" class="setting-item">
+        <div v-if="chunkSize || astTargetSize" class="setting-item">
           <span class="setting-bullet" />
           <div>
-            <dt>Chunk Size:</dt>
-            <dd>{{ chunkSize }} Lines</dd>
+            <dt>{{ astTargetSize ? 'Target Chunk Size:' : 'Chunk Size:' }}</dt>
+            <dd>{{ astTargetSize ?? chunkSize }} Lines</dd>
           </div>
         </div>
 
-        <div class="setting-item">
+        <div v-if="!astTargetSize" class="setting-item">
           <span class="setting-bullet" />
           <div>
             <dt>Chunk Overlap:</dt>
@@ -35,7 +35,7 @@
           </div>
         </div>
 
-        <div class="setting-item">
+        <div v-if="!astTargetSize" class="setting-item">
           <span class="setting-bullet" />
           <div>
             <dt>Minimum Chunk Size:</dt>
@@ -112,8 +112,10 @@
 <script setup lang="ts">
 defineProps<{
   fileName: string
+  isFolder?: boolean
   methodLabel: string
   chunkSize: number | null
+  astTargetSize?: number
   chunkCount: number
   overlap: number
   minimumSize: number
