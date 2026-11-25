@@ -53,5 +53,7 @@ function sampleFilesPlugin(): Plugin {
 export default defineConfig({
   base: '/raglens/',
   worker: { format: 'es' },
+  // Discover worker dependencies up front, before a user starts an in-memory run.
+  optimizeDeps: { include: ['@huggingface/transformers', 'web-tree-sitter'] },
   plugins: [vue(), sampleFilesPlugin()]
 })

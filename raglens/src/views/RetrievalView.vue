@@ -88,9 +88,10 @@
               <input id="run-name" v-model="runName" type="text" maxlength="80" :placeholder="defaultRunName">
             </div>
             <p v-if="snapshotMessage" class="snapshot-message" role="status">{{ snapshotMessage }}</p>
+            <p v-if="snapshotError" class="snapshot-error" role="alert">{{ snapshotError }}</p>
             <div class="save-actions">
               <button class="save-button" type="submit" :disabled="!canSave">
-                Save run snapshot
+                {{ savingSnapshot ? 'Saving…' : 'Save run snapshot' }}
               </button>
               <button class="compare-button" type="button" :disabled="!canCompare" @click="openComparison">
                 Compare results
@@ -156,12 +157,12 @@ const props = defineProps<{
   source: SourceSelection
   ingestionSettings: IngestionSettings
   snapshotCount: number
+  saveRun: (snapshot: RunSnapshot) => Promise<void>
 }>()
 
 const emit = defineEmits<{
   back: []
   compare: []
-  'save-snapshot': [snapshot: RunSnapshot]
 }>()
 
 const topKOptions = [3, 5, 10]
@@ -176,6 +177,8 @@ watch(topK, value => {
 const draftMessage = ref('')
 const messages = ref<ChatMessage[]>([])
 const snapshotMessage = ref('')
+const snapshotError = ref('')
+const savingSnapshot = ref(false)
 const runName = ref('')
 const defaultRunName = computed(() => `Run ${props.snapshotCount + 1}`)
 let nextMessageId = 1
@@ -196,7 +199,7 @@ const currentSettings = computed<RetrievalSettings>(() => ({
   rerankTopN: reranking.value ? Math.min(rerankTopN.value, topK.value) : null
 }))
 const hasResponse = computed(() => messages.value.some(message => message.role === 'assistant'))
-const canSave = computed(() => hasResponse.value && topK.value > 0)
+const canSave = computed(() => hasResponse.value && topK.value > 0 && !savingSnapshot.value)
 const canCompare = computed(() => props.snapshotCount > 0)
 
 function sendMessage() {
@@ -224,19 +227,19 @@ function deleteMessage(messageId: number) {
   snapshotMessage.value = ''
 }
 
-function saveSnapshot() {
+async function saveSnapshot() {
   if (!canSave.value) return
 
   const name = runName.value.trim() || defaultRunName.value
 
-  emit('save-snapshot', {
+  const snapshot: RunSnapshot = {
     id: Date.now(),
     name,
     fileName: props.source.name,
     sourcePaths: props.source.isFolder ? props.source.files.map(file => file.path) : undefined,
     ingestionSettings: {
       ...props.ingestionSettings,
-      chunks: [...props.ingestionSettings.chunks],
+      chunks: props.ingestionSettings.chunks.map(chunk => ({ ...chunk })),
       parents: props.ingestionSettings.parents?.map(parent => ({ ...parent }))
     },
     retrievalSettings: { ...currentSettings.value },
@@ -244,9 +247,20 @@ function saveSnapshot() {
       ...message,
       retrievalSettings: message.retrievalSettings && { ...message.retrievalSettings }
     }))
-  })
-  runName.value = ''
-  snapshotMessage.value = `“${name}” saved with ${messages.value.length} messages.`
+  }
+
+  savingSnapshot.value = true
+  snapshotError.value = ''
+  snapshotMessage.value = ''
+  try {
+    await props.saveRun(snapshot)
+    runName.value = ''
+    snapshotMessage.value = `“${name}” saved with ${snapshot.messages.length} messages.`
+  } catch {
+    snapshotError.value = 'Could not save this run in browser storage. You can try again.'
+  } finally {
+    savingSnapshot.value = false
+  }
 }
 
 function openComparison() {
@@ -485,6 +499,12 @@ select {
 .snapshot-message {
   margin-bottom: 10px;
   color: #047857;
+  font-size: 12px;
+}
+
+.snapshot-error {
+  margin-bottom: 10px;
+  color: #b91c1c;
   font-size: 12px;
 }
 

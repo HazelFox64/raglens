@@ -2,7 +2,10 @@
   <main class="landing-page">
     <header class="header">
       <h2>RAGLens</h2>
-      <span>Start a run</span>
+      <button v-if="hasSnapshots" class="saved-runs-button" type="button" @click="emit('compare')">
+        Compare saved runs
+      </button>
+      <span v-else>Start a run</span>
     </header>
 
     <section class="main-content">
@@ -109,8 +112,11 @@ import FileUploader from '../components/FileUploader.vue'
 import sampleFiles from 'virtual:sample-files'
 import type { SourceFile, SourceSelection } from '../types/rag'
 
+defineProps<{ hasSnapshots: boolean }>()
+
 const emit = defineEmits<{
   continue: [source: SourceSelection]
+  compare: []
 }>()
 
 const selectedSource = ref<SourceSelection | null>(null)
@@ -224,6 +230,15 @@ function startExploring() {
 
 .header span {
   color: #64748b;
+  font-size: 13px;
+}
+
+.saved-runs-button {
+  padding: 7px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  background: white;
+  color: #334155;
   font-size: 13px;
 }
 

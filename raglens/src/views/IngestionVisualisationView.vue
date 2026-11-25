@@ -26,11 +26,11 @@
 
         <div class="embedding-content">
           <section class="progress-area">
-            <p class="progress-status">{{ progressStatus }}</p>
+            <p class="progress-status" role="status">{{ progressStatus }}</p>
             <div
               class="progress-track"
               role="progressbar"
-              aria-label="Simulated embedding progress"
+              aria-label="Embedding progress"
               :aria-valuenow="processedCount"
               aria-valuemin="0"
               :aria-valuemax="settings.chunks.length"
@@ -38,21 +38,18 @@
               <span :style="{ width: `${progressPercent}%` }" />
             </div>
             <strong>{{ processedCount }} / {{ settings.chunks.length }} chunks indexed</strong>
+            <p v-if="embeddingError" class="embedding-error" role="alert">{{ embeddingError }}</p>
+            <button v-if="embeddingError" class="retry-button" type="button" @click="startEmbedding">Retry embedding</button>
           </section>
 
           <p class="eyebrow">Current chunk</p>
 
           <article class="code-card" :class="currentChunkColour">
             <header>
-              <span>
-                Chunk {{ currentChunk?.id ?? '—' }}
-                <template v-if="currentChunk?.parentId">· Parent {{ currentChunk.parentId }}</template>
-                <template v-if="currentChunk?.symbolName">· {{ currentChunk.symbolName }}</template>
-                <template v-if="source.isFolder && currentChunk">· {{ currentChunk.sourcePath }}</template>
-              </span>
+              <span :title="chunkHeading">{{ chunkHeading }}</span>
               <span>{{ currentChunkLineCount }} lines</span>
             </header>
-            <pre>{{ currentChunk?.content ?? '' }}</pre>
+            <pre ref="codePreview" tabindex="0" role="region" aria-label="Current chunk code">{{ currentChunk?.content ?? '' }}</pre>
           </article>
 
           <div class="conversion-arrow" aria-hidden="true">↓</div>
@@ -60,29 +57,83 @@
           <article class="vector-card">
             <header>
               <span>Vector equivalent</span>
-              <span>Simulated example</span>
+              <span>{{ embeddingModel.dimensions }} dimensions</span>
             </header>
             <div class="vector-values">
-              <div v-for="(value, index) in vectorValues" :key="index" class="vector-row">
-                <span>{{ index + 1 }}</span>
-                <div class="vector-track">
-                  <i :class="{ negative: value < 0 }" :style="{ width: `${Math.abs(value) * 100}%` }" />
+              <template v-if="vectorValues.length">
+                <div v-for="(value, index) in vectorValues" :key="index" class="vector-row">
+                  <span>{{ index + 1 }}</span>
+                  <div class="vector-track">
+                    <i :class="{ negative: value < 0 }" :style="{ width: `${Math.abs(value) * 100}%` }" />
+                  </div>
+                  <b>{{ value.toFixed(3) }}</b>
                 </div>
-                <b>{{ value.toFixed(3) }}</b>
-              </div>
+              </template>
+              <p v-else class="vector-note">Waiting for this chunk’s embedding.</p>
             </div>
+            <p class="vector-note vector-caption">{{ embeddingModel.id }} · First 6 values shown</p>
+            <p v-if="currentTokenCount > embeddingModel.tokenLimit" class="vector-note vector-caption">
+              Input truncated to {{ embeddingModel.tokenLimit }} tokens (original: {{ currentTokenCount }}).
+            </p>
           </article>
 
           <p class="embedding-explanation">
-            An embedding model converts the meaning of this code into numbers. Similar code creates vectors that sit closer together in the vector index, making relevant chunks easier to retrieve.
+            MiniLM runs in your browser. The first run downloads model files, and the progress bar tracks chunks whose vectors are ready. Playback controls which chunk you’re viewing.
           </p>
         </div>
         <footer class="chunk-controls">
-          <button type="button" :disabled="activeChunkIndex === 0" @click="previousChunk">
-            Previous chunk
-          </button>
-          <button class="primary-button" type="button" @click="nextChunk">
-            {{ canContinue ? 'Continue to retrieval' : 'Next chunk' }}
+          <div class="playback-buttons" role="group" aria-label="Chunk playback">
+            <button
+              type="button"
+              aria-label="Previous chunk"
+              title="Previous chunk"
+              :disabled="activeChunkIndex === 0"
+              @click="stepChunk(-1)"
+            >
+              <span aria-hidden="true">⏮︎</span>
+            </button>
+            <button
+              class="primary-button"
+              type="button"
+              :aria-label="playbackAction"
+              :title="playbackAction"
+              :disabled="settings.chunks.length < 2"
+              @click="togglePlayback"
+            >
+              <span aria-hidden="true">{{ isPlaying ? '⏸︎' : isLastChunk ? '↻' : '▶︎' }}</span>
+            </button>
+            <button
+              type="button"
+              aria-label="Next chunk"
+              title="Next chunk"
+              :disabled="!canStepForward"
+              @click="stepChunk(1)"
+            >
+              <span aria-hidden="true">⏭︎</span>
+            </button>
+          </div>
+
+          <div class="playback-speed">
+            <label for="playback-speed">Speed <span aria-hidden="true">{{ playbackSpeed }}×</span></label>
+            <input
+              id="playback-speed"
+              v-model.number="speedPosition"
+              type="range"
+              min="0"
+              :max="playbackSpeeds.length - 1"
+              step="1"
+              :aria-valuetext="`${playbackSpeed} times normal speed`"
+              :disabled="settings.chunks.length < 2"
+            >
+            <div class="speed-ticks" aria-hidden="true">
+              <span>0.25×</span>
+              <span>1×</span>
+              <span>2×</span>
+            </div>
+          </div>
+
+          <button class="continue-button" type="button" :disabled="!canContinue" @click="continueToRetrieval">
+            Continue to retrieval
           </button>
         </footer>
       </section>
@@ -100,25 +151,36 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import CodeViewer from '../components/CodeViewer.vue'
 import SettingsBar from '../components/SettingsBar.vue'
 import type { IngestionSettings, SourceSelection } from '../types/rag'
+import EmbedWorker from '../embedding/embed.worker?worker'
+import { embeddingModel } from '../embedding/index'
+import type { EmbeddingIndex, EmbeddingMessage } from '../embedding/index'
 
 const props = defineProps<{
   source: SourceSelection
   settings: IngestionSettings
+  existingIndex: EmbeddingIndex | null
 }>()
 
 const emit = defineEmits<{
   back: []
-  continue: []
+  continue: [index: EmbeddingIndex]
 }>()
 
 const activeChunkIndex = ref(0)
-const processedCount = computed(() =>
-  Math.min(activeChunkIndex.value + 1, props.settings.chunks.length)
-)
+const isPlaying = ref(false)
+const playbackSpeeds = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2]
+const speedPosition = ref(playbackSpeeds.indexOf(1))
+const playbackSpeed = computed(() => playbackSpeeds[speedPosition.value] ?? 1)
+const codePreview = ref<HTMLPreElement | null>(null)
+const processedCount = ref(props.existingIndex?.chunks.length ?? 0)
+const modelReady = ref(Boolean(props.existingIndex))
+const embeddingError = ref('')
+let worker: Worker | undefined
+const embeddingIndex = shallowRef(props.existingIndex)
 
 const methodLabel = computed(() => {
   const labels = {
@@ -130,6 +192,16 @@ const methodLabel = computed(() => {
   return labels[props.settings.method]
 })
 const currentChunk = computed(() => props.settings.chunks[activeChunkIndex.value])
+const chunkHeading = computed(() => {
+  const chunk = currentChunk.value
+  if (!chunk) return 'Chunk —'
+
+  const labels = [`Chunk ${chunk.id}`]
+  if (chunk.parentId) labels.push(`Parent ${chunk.parentId}`)
+  if (chunk.symbolName) labels.push(chunk.symbolName)
+  if (props.source.isFolder) labels.push(chunk.sourcePath)
+  return labels.join(' · ')
+})
 const currentChunkColour = computed(() => {
   if (!currentChunk.value) return ''
 
@@ -147,41 +219,125 @@ const progressPercent = computed(() => {
   return (processedCount.value / props.settings.chunks.length) * 100
 })
 const isComplete = computed(() => processedCount.value === props.settings.chunks.length)
-const canContinue = computed(() =>
-  isComplete.value && activeChunkIndex.value === props.settings.chunks.length - 1
-)
+const isLastChunk = computed(() => activeChunkIndex.value === props.settings.chunks.length - 1)
+const canContinue = computed(() => isComplete.value && processedCount.value > 0)
+const canStepForward = computed(() => activeChunkIndex.value + 1 < processedCount.value)
+const playbackAction = computed(() => {
+  if (isPlaying.value) return 'Pause'
+  return isLastChunk.value ? 'Replay' : 'Play'
+})
 const progressStatus = computed(() => {
   if (!currentChunk.value) return 'No chunks to index.'
-  if (isComplete.value) return 'All chunks indexed in the simulation.'
-
-  return `Chunk ${currentChunk.value.id} indexed in the simulation.`
+  if (isComplete.value) return 'Embedding complete.'
+  if (embeddingError.value) return 'Embedding stopped.'
+  return modelReady.value ? 'Embedding chunks…' : 'Loading MiniLM…'
 })
 const vectorValues = computed(() => {
-  const seed = activeChunkIndex.value + 1
+  const index = embeddingIndex.value
+  if (!index || activeChunkIndex.value >= processedCount.value) return []
 
-  return [0.82, -0.31, 0.57, 0.16, -0.68, 0.41].map((value, index) => {
-    const adjusted = value + ((seed * (index + 2)) % 5) / 100
-
-    return Math.max(-0.99, Math.min(0.99, adjusted))
-  })
+  const offset = activeChunkIndex.value * index.model.dimensions
+  return Array.from(index.vectors.subarray(offset, offset + 6))
+})
+const currentTokenCount = computed(() => {
+  if (activeChunkIndex.value >= processedCount.value) return 0
+  return embeddingIndex.value?.tokenCounts[activeChunkIndex.value] ?? 0
 })
 
-function previousChunk() {
-  if (activeChunkIndex.value === 0) return
-
-  activeChunkIndex.value -= 1
+function stepChunk(direction: -1 | 1) {
+  isPlaying.value = false
+  const nextIndex = activeChunkIndex.value + direction
+  if (nextIndex >= 0 && (direction < 0 || canStepForward.value)) {
+    activeChunkIndex.value = nextIndex
+  }
 }
 
-function nextChunk() {
-  if (canContinue.value) {
-    emit('continue')
+function togglePlayback() {
+  if (props.settings.chunks.length < 2) return
+  if (isPlaying.value) {
+    isPlaying.value = false
     return
   }
 
-  if (activeChunkIndex.value < props.settings.chunks.length - 1) {
-    activeChunkIndex.value += 1
+  if (isLastChunk.value) activeChunkIndex.value = 0
+  isPlaying.value = true
+}
+
+function stopWorker() {
+  worker?.terminate()
+  worker = undefined
+}
+
+function stopWithError(message: string) {
+  stopWorker()
+  isPlaying.value = false
+  embeddingError.value = message
+}
+
+function startEmbedding() {
+  stopWorker()
+  const chunks = props.settings.chunks.map(chunk => ({ ...chunk }))
+  if (!chunks.length) return
+
+  activeChunkIndex.value = 0
+  processedCount.value = 0
+  modelReady.value = false
+  embeddingError.value = ''
+
+  try {
+    const index: EmbeddingIndex = {
+      id: crypto.randomUUID(),
+      model: embeddingModel,
+      chunks,
+      vectors: new Float32Array(chunks.length * embeddingModel.dimensions),
+      tokenCounts: []
+    }
+    embeddingIndex.value = index
+    const run = new EmbedWorker()
+    worker = run
+    run.onmessage = ({ data }: MessageEvent<EmbeddingMessage>) => {
+      if (worker !== run) return
+      if (data.type === 'ready') modelReady.value = true
+      if (data.type === 'error') stopWithError(data.message)
+      if (data.type === 'batch') {
+        index.vectors.set(data.vectors, data.offset * embeddingModel.dimensions)
+        index.tokenCounts.push(...data.tokenCounts)
+        processedCount.value += data.tokenCounts.length
+        if (isComplete.value) stopWorker()
+      }
+    }
+    run.onerror = () => {
+      if (worker === run) stopWithError('Could not start the embedding worker. You can try again.')
+    }
+    run.postMessage(chunks.map(chunk => chunk.content))
+  } catch {
+    stopWithError('Could not start embedding in this browser. You can try again.')
   }
 }
+
+function continueToRetrieval() {
+  if (embeddingIndex.value && canContinue.value) emit('continue', embeddingIndex.value)
+}
+
+onMounted(() => {
+  if (!props.existingIndex) startEmbedding()
+})
+onBeforeUnmount(stopWorker)
+
+watch(activeChunkIndex, () => {
+  codePreview.value?.scrollTo(0, 0)
+}, { flush: 'post' })
+
+watch([isPlaying, playbackSpeed, activeChunkIndex, canStepForward], ([playing, speed, , canStep], _, onCleanup) => {
+  if (!playing || !canStep) return
+
+  const timer = window.setTimeout(() => {
+    activeChunkIndex.value += 1
+    if (isLastChunk.value) isPlaying.value = false
+  }, 1500 / speed)
+
+  onCleanup(() => window.clearTimeout(timer))
+})
 
 </script>
 
@@ -338,14 +494,19 @@ function nextChunk() {
 }
 
 .code-card header span:first-child {
-  overflow-wrap: anywhere;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-right: 8px;
 }
 
 .code-card pre {
-  min-height: 145px;
+  height: clamp(145px, 23dvh, 220px);
   margin: 0;
   padding: 14px 16px;
   overflow: auto;
+  overscroll-behavior: contain;
   color: #334155;
   font: inherit;
   font-size: 13px;
@@ -367,6 +528,32 @@ function nextChunk() {
 
 .vector-values {
   padding: 13px 14px;
+}
+
+.vector-note {
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.vector-caption {
+  padding: 0 14px 10px;
+}
+
+.embedding-error {
+  margin-top: 8px;
+  color: #b91c1c;
+  font-size: 13px;
+}
+
+.retry-button {
+  margin-top: 6px;
+  padding: 5px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: white;
+  color: #334155;
+  font-size: 13px;
 }
 
 .vector-row {
@@ -418,12 +605,18 @@ function nextChunk() {
 
 .chunk-controls {
   display: flex;
-  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
   flex-shrink: 0;
   gap: 12px;
   padding: 12px 16px;
   border-top: 1px solid #e5e7eb;
   background: #fafafa;
+}
+
+.playback-buttons {
+  display: flex;
+  gap: 6px;
 }
 
 .chunk-controls button {
@@ -442,13 +635,62 @@ function nextChunk() {
   cursor: not-allowed;
 }
 
+.playback-buttons button {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  place-items: center;
+  font-size: 16px;
+}
+
+.playback-speed {
+  flex: 1 1 110px;
+  min-width: 0;
+  color: #475569;
+  font-size: 12px;
+}
+
+.playback-speed label {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.playback-speed input {
+  display: block;
+  width: 100%;
+  margin-top: 3px;
+  accent-color: #2563eb;
+}
+
+.speed-ticks {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin-top: 2px;
+}
+
+.speed-ticks span:nth-child(2) {
+  text-align: center;
+}
+
+.speed-ticks span:last-child {
+  text-align: right;
+}
+
+.continue-button {
+  margin-left: auto;
+}
+
+.chunk-controls .continue-button:not(:disabled),
 .chunk-controls .primary-button {
   border-color: #2563eb;
   background: #2563eb;
   color: white;
 }
 
-.chunk-controls .primary-button:hover {
+.chunk-controls .continue-button:hover:not(:disabled),
+.chunk-controls .primary-button:hover:not(:disabled) {
   background: #1d4ed8;
 }
 

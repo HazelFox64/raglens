@@ -8,7 +8,9 @@
     <section class="comparison-content">
       <header class="comparison-header">
         <div>
-          <button class="back-button" type="button" @click="$emit('back')">← Back to retrieval</button>
+          <button class="back-button" type="button" @click="$emit('back')">
+            {{ returnToRetrieval ? '← Back to retrieval' : '← Back to start' }}
+          </button>
           <h1>Comparison</h1>
         </div>
 
@@ -116,6 +118,7 @@ import type { RunSnapshot } from '../types/rag'
 
 const props = defineProps<{
   snapshots: RunSnapshot[]
+  returnToRetrieval: boolean
 }>()
 
 defineEmits<{

@@ -59,6 +59,7 @@ export interface ChatMessage {
 
 export interface RunSnapshot {
   id: number
+  embeddingIndexId?: string
   name: string
   fileName: string
   sourcePaths?: string[]
