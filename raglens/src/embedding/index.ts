@@ -16,9 +16,15 @@ export interface EmbeddingIndex {
   chunks: CodeChunk[]
   vectors: Float32Array
   tokenCounts: number[]
+  tokenPreviews?: string[][]
 }
+
+export type EmbeddingRequest =
+  | { type: 'index'; texts: string[] }
+  | { type: 'query'; text: string }
 
 export type EmbeddingMessage =
   | { type: 'ready' }
-  | { type: 'batch'; offset: number; vectors: Float32Array; tokenCounts: number[] }
-  | { type: 'error'; message: string }
+  | { type: 'batch'; offset: number; vectors: Float32Array; tokenCounts: number[]; tokenPreviews: string[][] }
+  | { type: 'query'; vector: Float32Array; tokenCount: number }
+  | { type: 'error'; request: EmbeddingRequest['type']; message: string }

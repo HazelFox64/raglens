@@ -54,32 +54,20 @@
 
           <div class="conversion-arrow" aria-hidden="true">↓</div>
 
-          <article class="vector-card">
-            <header>
-              <span>Vector equivalent</span>
-              <span>{{ embeddingModel.dimensions }} dimensions</span>
-            </header>
-            <div class="vector-values">
-              <template v-if="vectorValues.length">
-                <div v-for="(value, index) in vectorValues" :key="index" class="vector-row">
-                  <span>{{ index + 1 }}</span>
-                  <div class="vector-track">
-                    <i :class="{ negative: value < 0 }" :style="{ width: `${Math.abs(value) * 100}%` }" />
-                  </div>
-                  <b>{{ value.toFixed(3) }}</b>
-                </div>
-              </template>
-              <p v-else class="vector-note">Waiting for this chunk’s embedding.</p>
-            </div>
-            <p class="vector-note vector-caption">{{ embeddingModel.id }} · First 6 values shown</p>
-            <p v-if="currentTokenCount > embeddingModel.tokenLimit" class="vector-note vector-caption">
-              Input truncated to {{ embeddingModel.tokenLimit }} tokens (original: {{ currentTokenCount }}).
-            </p>
-          </article>
-
-          <p class="embedding-explanation">
-            MiniLM runs in your browser. The first run downloads model files, and the progress bar tracks chunks whose vectors are ready. Playback controls which chunk you’re viewing.
-          </p>
+          <EmbeddingInspector
+            :vector="vectorValues"
+            :tokens="currentTokens"
+            :token-count="currentTokenCount"
+            :token-limit="embeddingModel.tokenLimit"
+            :ready="canContinue"
+            :searching="searching"
+            :search-error="searchError"
+            :query-token-count="queryTokenCount"
+            :results="similarChunks"
+            :chunks="settings.chunks"
+            @search="searchChunks"
+            @inspect="inspectChunk"
+          />
         </div>
         <footer class="chunk-controls">
           <div class="playback-buttons" role="group" aria-label="Chunk playback">
@@ -153,11 +141,14 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import CodeViewer from '../components/CodeViewer.vue'
+import EmbeddingInspector from '../components/EmbeddingInspector.vue'
 import SettingsBar from '../components/SettingsBar.vue'
 import type { IngestionSettings, SourceSelection } from '../types/rag'
 import EmbedWorker from '../embedding/embed.worker?worker'
 import { embeddingModel } from '../embedding/index'
-import type { EmbeddingIndex, EmbeddingMessage } from '../embedding/index'
+import type { EmbeddingIndex, EmbeddingMessage, EmbeddingRequest } from '../embedding/index'
+import { rankSimilarChunks } from '../embedding/similarity'
+import type { SimilarChunk } from '../embedding/similarity'
 
 const props = defineProps<{
   source: SourceSelection
@@ -179,6 +170,10 @@ const codePreview = ref<HTMLPreElement | null>(null)
 const processedCount = ref(props.existingIndex?.chunks.length ?? 0)
 const modelReady = ref(Boolean(props.existingIndex))
 const embeddingError = ref('')
+const searching = ref(false)
+const searchError = ref('')
+const queryTokenCount = ref(0)
+const similarChunks = ref<SimilarChunk[]>([])
 let worker: Worker | undefined
 const embeddingIndex = shallowRef(props.existingIndex)
 
@@ -234,14 +229,19 @@ const progressStatus = computed(() => {
 })
 const vectorValues = computed(() => {
   const index = embeddingIndex.value
-  if (!index || activeChunkIndex.value >= processedCount.value) return []
+  if (!index || activeChunkIndex.value >= processedCount.value) return new Float32Array()
 
-  const offset = activeChunkIndex.value * index.model.dimensions
-  return Array.from(index.vectors.subarray(offset, offset + 6))
+  const { dimensions } = index.model
+  const offset = activeChunkIndex.value * dimensions
+  return index.vectors.subarray(offset, offset + dimensions)
 })
 const currentTokenCount = computed(() => {
   if (activeChunkIndex.value >= processedCount.value) return 0
   return embeddingIndex.value?.tokenCounts[activeChunkIndex.value] ?? 0
+})
+const currentTokens = computed(() => {
+  if (activeChunkIndex.value >= processedCount.value) return undefined
+  return embeddingIndex.value?.tokenPreviews?.[activeChunkIndex.value]
 })
 
 function stepChunk(direction: -1 | 1) {
@@ -274,6 +274,85 @@ function stopWithError(message: string) {
   embeddingError.value = message
 }
 
+function getWorker() {
+  if (worker) return worker
+
+  const run = new EmbedWorker()
+  worker = run
+  run.onmessage = ({ data }: MessageEvent<EmbeddingMessage>) => {
+    const index = embeddingIndex.value
+    if (worker !== run || !index) return
+
+    switch (data.type) {
+      case 'ready':
+        modelReady.value = true
+        break
+      case 'batch':
+        index.vectors.set(data.vectors, data.offset * embeddingModel.dimensions)
+        index.tokenCounts.push(...data.tokenCounts)
+        index.tokenPreviews?.push(...data.tokenPreviews)
+        processedCount.value += data.tokenCounts.length
+        break
+      case 'query':
+        try {
+          similarChunks.value = rankSimilarChunks(index, data.vector)
+          queryTokenCount.value = data.tokenCount
+        } catch {
+          searchError.value = 'Could not compare this question with the chunk vectors.'
+        } finally {
+          searching.value = false
+        }
+        break
+      case 'error':
+        if (data.request === 'query') {
+          searching.value = false
+          searchError.value = data.message
+        } else {
+          stopWithError(data.message)
+        }
+        break
+    }
+  }
+  run.onerror = () => {
+    if (worker !== run) return
+
+    if (searching.value) {
+      stopWorker()
+      searching.value = false
+      searchError.value = 'Could not start MiniLM for this question. You can try again.'
+    } else if (!isComplete.value) {
+      stopWithError('Could not start the embedding worker. You can try again.')
+    } else {
+      stopWorker()
+    }
+  }
+  return run
+}
+
+function searchChunks(text: string) {
+  if (!canContinue.value || searching.value) return
+
+  isPlaying.value = false
+  searching.value = true
+  searchError.value = ''
+  similarChunks.value = []
+
+  try {
+    const request: EmbeddingRequest = { type: 'query', text }
+    getWorker().postMessage(request)
+  } catch {
+    searching.value = false
+    searchError.value = 'Could not start MiniLM for this question. You can try again.'
+  }
+}
+
+function inspectChunk(row: number) {
+  if (row < 0 || row >= processedCount.value) return
+  isPlaying.value = false
+  activeChunkIndex.value = row
+  codePreview.value?.focus()
+}
+
 function startEmbedding() {
   stopWorker()
   const chunks = props.settings.chunks.map(chunk => ({ ...chunk }))
@@ -290,26 +369,12 @@ function startEmbedding() {
       model: embeddingModel,
       chunks,
       vectors: new Float32Array(chunks.length * embeddingModel.dimensions),
-      tokenCounts: []
+      tokenCounts: [],
+      tokenPreviews: []
     }
     embeddingIndex.value = index
-    const run = new EmbedWorker()
-    worker = run
-    run.onmessage = ({ data }: MessageEvent<EmbeddingMessage>) => {
-      if (worker !== run) return
-      if (data.type === 'ready') modelReady.value = true
-      if (data.type === 'error') stopWithError(data.message)
-      if (data.type === 'batch') {
-        index.vectors.set(data.vectors, data.offset * embeddingModel.dimensions)
-        index.tokenCounts.push(...data.tokenCounts)
-        processedCount.value += data.tokenCounts.length
-        if (isComplete.value) stopWorker()
-      }
-    }
-    run.onerror = () => {
-      if (worker === run) stopWithError('Could not start the embedding worker. You can try again.')
-    }
-    run.postMessage(chunks.map(chunk => chunk.content))
+    const request: EmbeddingRequest = { type: 'index', texts: chunks.map(chunk => chunk.content) }
+    getWorker().postMessage(request)
   } catch {
     stopWithError('Could not start embedding in this browser. You can try again.')
   }
@@ -458,8 +523,7 @@ watch([isPlaying, playbackSpeed, activeChunkIndex, canStepForward], ([playing, s
   font-weight: 600;
 }
 
-.code-card,
-.vector-card {
+.code-card {
   overflow: hidden;
   border: 1px solid #d7dee6;
   border-radius: 8px;
@@ -474,8 +538,7 @@ watch([isPlaying, playbackSpeed, activeChunkIndex, canStepForward], ([playing, s
 .code-card.chunk-2 { background: #e5f2e1; }
 .code-card.chunk-3 { background: #efe4f3; }
 
-.code-card header,
-.vector-card header {
+.code-card header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -486,8 +549,7 @@ watch([isPlaying, playbackSpeed, activeChunkIndex, canStepForward], ([playing, s
   font-weight: 600;
 }
 
-.code-card header span:last-child,
-.vector-card header span:last-child {
+.code-card header span:last-child {
   flex-shrink: 0;
   color: #64748b;
   font-weight: 400;
@@ -522,24 +584,6 @@ watch([isPlaying, playbackSpeed, activeChunkIndex, canStepForward], ([playing, s
   text-align: center;
 }
 
-.vector-card {
-  background: #eff6ff;
-}
-
-.vector-values {
-  padding: 13px 14px;
-}
-
-.vector-note {
-  color: #475569;
-  font-size: 12px;
-  line-height: 1.45;
-}
-
-.vector-caption {
-  padding: 0 14px 10px;
-}
-
 .embedding-error {
   margin-top: 8px;
   color: #b91c1c;
@@ -554,53 +598,6 @@ watch([isPlaying, playbackSpeed, activeChunkIndex, canStepForward], ([playing, s
   background: white;
   color: #334155;
   font-size: 13px;
-}
-
-.vector-row {
-  display: grid;
-  grid-template-columns: 20px 1fr 46px;
-  align-items: center;
-  gap: 8px;
-}
-
-.vector-row + .vector-row {
-  margin-top: 8px;
-}
-
-.vector-row > span,
-.vector-row b {
-  color: #475569;
-  font-size: 11px;
-  font-weight: 500;
-}
-
-.vector-row b {
-  text-align: right;
-}
-
-.vector-track {
-  height: 7px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: #cbd5e1;
-}
-
-.vector-track i {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: #2563eb;
-}
-
-.vector-track i.negative {
-  background: #64748b;
-}
-
-.embedding-explanation {
-  margin: 16px 0 20px;
-  color: #475569;
-  font-size: 13px;
-  line-height: 1.55;
 }
 
 .chunk-controls {
