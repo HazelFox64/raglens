@@ -1,4 +1,8 @@
 declare module 'virtual:sample-files' {
-  const sampleFiles: string[]
-  export default sampleFiles
+  const samples: Array<{
+    name: string
+    isFolder: boolean
+    files: string[]
+  }>
+  export default samples
 }

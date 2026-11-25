@@ -1,4 +1,4 @@
-import { defineConfig, type Plugin } from 'vite'
+import { defineConfig, normalizePath, type Plugin } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -6,6 +6,14 @@ import { resolve } from 'node:path'
 const samplesDirectory = resolve(__dirname, 'public/samples')
 const virtualModuleId = 'virtual:sample-files'
 const resolvedVirtualModuleId = '\0' + virtualModuleId
+
+function pythonFiles(directory: string, prefix = ''): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
+    const path = prefix + entry.name
+    if (entry.isDirectory()) return pythonFiles(resolve(directory, entry.name), path + '/')
+    return entry.isFile() && /\.py$/i.test(entry.name) ? [path] : []
+  })
+}
 
 function sampleFilesPlugin(): Plugin {
   return {
@@ -20,20 +28,31 @@ function sampleFilesPlugin(): Plugin {
     load(id) {
       if (id !== resolvedVirtualModuleId) return
 
-      const files = readdirSync(samplesDirectory)
-        .filter(file => file.endsWith('.py'))
-        .sort()
+      const samples = readdirSync(samplesDirectory, { withFileTypes: true })
+        .sort((a, b) => a.name.localeCompare(b.name, 'en'))
+        .flatMap(entry => {
+          if (entry.isDirectory()) {
+            const files = pythonFiles(resolve(samplesDirectory, entry.name))
+              .sort((a, b) => a.localeCompare(b, 'en'))
+            return files.length ? [{ name: entry.name, isFolder: true, files }] : []
+          }
 
-      return `export default ${JSON.stringify(files)}`
+          return entry.isFile() && /\.py$/i.test(entry.name)
+            ? [{ name: entry.name, isFolder: false, files: [entry.name] }]
+            : []
+        })
+
+      return `export default ${JSON.stringify(samples)}`
     },
 
     configureServer(server) {
       server.watcher.add(samplesDirectory)
+      const samplePrefix = normalizePath(samplesDirectory) + '/'
 
       server.watcher.on('all', (_event, filePath) => {
         if (
-          filePath.startsWith(samplesDirectory) &&
-          filePath.endsWith('.py')
+          normalizePath(resolve(filePath)).startsWith(samplePrefix) &&
+          /\.py$/i.test(filePath)
         ) {
           const module = server.moduleGraph.getModuleById(
             resolvedVirtualModuleId

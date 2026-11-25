@@ -26,7 +26,7 @@
 
         <div class="file-options">
           <div class="sample-section">
-            <label for="sample-file">Sample file</label>
+            <label for="sample-file">Sample file or folder</label>
 
             <div
               class="sample-input"
@@ -40,11 +40,11 @@
                 <option value="">Select a sample...</option>
 
                 <option
-                  v-for="fileName in sampleFiles"
-                  :key="fileName"
-                  :value="fileName"
+                  v-for="sample in samples"
+                  :key="sample.name"
+                  :value="sample.name"
                 >
-                  {{ fileName }}
+                  {{ sample.name }}{{ sample.isFolder ? ` (folder · ${sample.files.length} .py)` : '' }}
                 </option>
               </select>
             </div>
@@ -71,7 +71,7 @@
             <FileUploader
               input-id="python-folder"
               folder
-              :selected-name="selectedSource?.isFolder ? selectedSource.name : undefined"
+              :selected-name="!selectedSample && selectedSource?.isFolder ? selectedSource.name : undefined"
               @files-selected="handleFilesSelected"
               @invalid-selection="errorMessage = $event"
             />
@@ -109,7 +109,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import FileUploader from '../components/FileUploader.vue'
-import sampleFiles from 'virtual:sample-files'
+import samples from 'virtual:sample-files'
 import type { SourceFile, SourceSelection } from '../types/rag'
 
 defineProps<{ hasSnapshots: boolean }>()
@@ -135,29 +135,26 @@ async function handleSampleChange() {
 
   errorMessage.value = ''
   selectedSource.value = null
-  loading.value = Boolean(selectedSample.value)
-
-  if (!selectedSample.value) return
-
-  const fileName = selectedSample.value
+  const sample = samples.find(item => item.name === selectedSample.value)
+  loading.value = Boolean(sample)
+  if (!sample) return
 
   try {
-    const response = await fetch(
-      `${import.meta.env.BASE_URL}samples/${encodeURIComponent(fileName)}`
-    )
+    const files = await Promise.all(sample.files.map(async path => {
+      const fullPath = sample.isFolder ? `${sample.name}/${path}` : path
+      const urlPath = fullPath.split('/').map(encodeURIComponent).join('/')
+      const response = await fetch(`${import.meta.env.BASE_URL}samples/${urlPath}`)
 
-    if (!response.ok) {
-      throw new Error('Could not load the selected sample.')
-    }
-
-    const content = await response.text()
+      if (!response.ok) throw new Error('Could not load the selected sample.')
+      return readSourceLines(path, await response.text())
+    }))
 
     if (version !== selectionVersion) return
 
     selectedSource.value = {
-      name: fileName,
-      isFolder: false,
-      files: [readSourceLines(fileName, content)]
+      name: sample.name,
+      isFolder: sample.isFolder,
+      files
     }
   } catch {
     if (version !== selectionVersion) return
